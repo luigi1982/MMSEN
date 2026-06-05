@@ -2,6 +2,7 @@ import torch
 from torchvision import transforms
 from matplotlib import pyplot as plt
 import numpy as np
+from tqdm import tqdm
 
 from src.data import load_data
 
@@ -153,6 +154,55 @@ def confusion_matrix(classes):
     plt.show()
 
 
+### compare multiple models and experiments
+def compare_exps(exps, labels):
+
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    fig, axes = plt.subplots(1, 5, figsize=(12, 5), constrained_layout=True)
+
+    for ax in axes:
+        ax.set_box_aspect(1)
+
+    for exp, label in zip(exps, labels):
+
+        mmsen_stats = torch.load('/content/drive/MyDrive/'+exp+'.pth', weights_only=False, map_location=torch.device(device))
+
+        # test loss
+        test_loss_mmsen = mmsen_stats['test_loss']
+        # roc - auc
+        roc_auc_mmsen = mmsen_stats['roc_auc']
+        # precision
+        precision_mmsen = mmsen_stats['precision']
+        # sensitivity
+        sensitivity_mmsen = mmsen_stats['sensitivity']
+        # specifity
+        specifity_mmsen = mmsen_stats['specificity']
+
+        axes[0].plot(test_loss_mmsen, 'o-', label=label)
+        axes[1].plot(roc_auc_mmsen, 'o-', label=label)
+        axes[2].plot(precision_mmsen, 'o-', label=label)
+        axes[3].plot(sensitivity_mmsen, 'o-', label=label)
+        axes[4].plot(specifity_mmsen, 'o-', label=label)
+
+        axes[0].set_title('Test Loss')
+        axes[1].set_title('ROC-AUC')
+        axes[2].set_title('Precision')
+        axes[3].set_title('Sensitivity')
+        axes[4].set_title('Specifity')
+
+    # Hide the unused 6th subplot
+    axes[-1].axis("off")
+
+    # Put one shared legend in the empty bottom-right space
+    handles, labels = axes[0].get_legend_handles_labels()
+    axes[-1].legend(handles, labels, loc="center")
+
+    plt.tight_layout()
+    plt.legend()
+    plt.show()
+
+
 ### visualize images, prediction and ground truth for a batch of images
 def vis_results(model, train_transform, test_transform, mean, std):
 
@@ -198,3 +248,41 @@ def vis_results(model, train_transform, test_transform, mean, std):
 
     fig.tight_layout()
     plt.show()
+
+
+def eval(model, test_transform):
+
+    _, _, val_loader = load_data(None, test_transform)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    classes = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
+    model.eval()
+
+    with torch.inference_mode():
+
+        for batch in tqdm(val_loader, total=len(val_loader)):
+
+            x = batch[0].to(device, non_blocking=True, memory_format=torch.channels_last)
+            y = batch[1].to(device, non_blocking=True).float()
+
+            # forward pass
+            with torch.amp.autocast('cuda', dtype=torch.bfloat16):
+                logits = model(x)
+
+            logits = logits.squeeze()
+            y = y.squeeze()
+
+            # get the label from the prediction
+            label_pred = torch.round(torch.sigmoid(logits))
+
+            # get the TPs, FPs, TNs, FNs
+            tp = torch.sum(label_pred[y == 1])
+            fp = torch.sum(label_pred[y == 0])
+            fn = torch.sum(y) - tp
+
+            classes['TP'] += tp.item()
+            classes['FP'] += fp.item()
+            classes['FN'] += fn.item()
+            classes['TN'] += y.numel() - tp.item() - fp.item() - fn.item()
+
+    return classes

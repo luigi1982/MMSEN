@@ -118,3 +118,26 @@ class MMSEN(nn.Module):
             ys.append(csam(x))
 
         return self.afiom(ys)
+    
+
+class CSAM_small(CSAM):
+
+    def __init__(self, c, num_heads, shrinkage_factor=2):
+        super().__init__(c, num_heads)
+
+        assert (c//shrinkage_factor)%num_heads == 0, 'c/shrinkage_factor needs to be divisable by number of heads'
+
+        self.num_heads = num_heads
+        self.head_dim = (c//shrinkage_factor)//num_heads
+        self.to_qkv = nn.Conv1d(in_channels=c, out_channels=3*(c//shrinkage_factor), kernel_size=1)
+        self.out_conv = nn.Conv1d(in_channels=c//shrinkage_factor, out_channels=c//shrinkage_factor, kernel_size=1)
+
+
+class MMSEN_small(MMSEN):
+
+    def __init__(self, assembly, num_heads, out_channels, shrinkage_factor=2):
+
+        super().__init__(assembly, num_heads, out_channels)
+
+        self.csam = nn.ModuleList([CSAM_small(out_channels[i], num_heads) for i in range(len(assembly))])
+        self.afiom = AFIOM([c//shrinkage_factor for c in out_channels])
