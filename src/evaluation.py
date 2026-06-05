@@ -1,9 +1,9 @@
 import torch
 from torchvision import transforms
 from matplotlib import pyplot as plt
-from numpy import np
+import numpy as np
 
-from data import load_data
+from src.data import load_data
 
 def comp_precision(classes):
   
